@@ -14,26 +14,47 @@ from app.schemas.chat import (
     ChatMessageCreate,
     ChatResponse,
     Citation,
-    TeamsActivity
+    TeamsActivity,
+    LangGraphMermaidResponse
 )
 from app.services.agent_router import agent_router_service
 from app.services.rag_service import rag_service
 from app.services.task_service import task_service
 from app.services.escalation_service import escalation_service
 from app.services.teams_service import teams_bot_service
+from app.services.langgraph_agent import langgraph_onboarding_service
 
 router = APIRouter()
 logger = logging.getLogger("chat_api")
 
-@router.post("", response_model=ChatResponse)
-async def chat_turn(
+@router.get("/graph/mermaid", response_model=LangGraphMermaidResponse)
+async def get_graph_mermaid():
+    """
+    Returns the visual Mermaid diagram and node topology of the compiled LangGraph agent.
+    """
+    nodes = [
+        "guardrail",
+        "router",
+        "rag_retrieval",
+        "rag_generation",
+        "action_executor",
+        "escalation",
+        "conversation"
+    ]
+    return LangGraphMermaidResponse(
+        mermaid=langgraph_onboarding_service.get_mermaid_diagram(),
+        nodes=nodes,
+        description="LangGraph state machine with deterministic safety guardrails, intent routing, hybrid RAG retrieval, autonomous tool execution, and human escalation handoff."
+    )
+
+@router.post("/graph", response_model=ChatResponse)
+async def chat_turn_langgraph(
     chat_in: ChatMessageCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> Any:
     """
-    Standard synchronous chat turn:
-    User Message -> Agent Router -> [RAG | Task Tracker Action | Human Escalation] -> Response
+    Executes a chat turn strictly through the compiled LangGraph state machine.
     """
     user_msg = ChatMessage(
         user_id=current_user.id,
@@ -44,9 +65,69 @@ async def chat_turn(
     db.add(user_msg)
     await db.commit()
 
-    # Step 1: Core Agent Router
-    decision = await agent_router_service.route(chat_in.content, current_user.id)
+    graph_state = await langgraph_onboarding_service.execute_turn(
+        db=db,
+        user=current_user,
+        message=chat_in.content,
+        conversation_id=chat_in.conversation_id
+    )
 
+    citations_data = graph_state.get("citations")
+    bot_msg = ChatMessage(
+        user_id=current_user.id,
+        conversation_id=chat_in.conversation_id,
+        sender="assistant",
+        content=graph_state.get("response_content", ""),
+        category=graph_state.get("category"),
+        confidence=graph_state.get("confidence"),
+        citations=citations_data,
+        agent_action=graph_state.get("action_result")
+    )
+    db.add(bot_msg)
+    await db.commit()
+    await db.refresh(bot_msg)
+
+    parsed_citations = [Citation(**c) for c in citations_data] if citations_data else None
+
+    return ChatResponse(
+        id=bot_msg.id,
+        conversation_id=bot_msg.conversation_id,
+        sender="assistant",
+        content=bot_msg.content,
+        category=bot_msg.category,
+        confidence=bot_msg.confidence,
+        citations=parsed_citations,
+        agent_action=bot_msg.agent_action,
+        execution_steps=graph_state.get("current_turn_steps", []),
+        engine="langgraph",
+        created_at=bot_msg.created_at
+    )
+
+@router.post("", response_model=ChatResponse)
+async def chat_turn(
+    chat_in: ChatMessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> Any:
+    """
+    Synchronous chat turn orchestrated via LangGraph:
+    User Message -> [LangGraph State Machine: Guardrails -> Router -> (RAG | Tools | Escalation | Convo)] -> Response
+    """
+    # Execute through LangGraph by default
+    if getattr(chat_in, "engine", "langgraph") == "langgraph":
+        return await chat_turn_langgraph(chat_in=chat_in, current_user=current_user, db=db)
+
+    # Legacy direct route fallback
+    user_msg = ChatMessage(
+        user_id=current_user.id,
+        conversation_id=chat_in.conversation_id,
+        sender="user",
+        content=chat_in.content
+    )
+    db.add(user_msg)
+    await db.commit()
+
+    decision = await agent_router_service.route(chat_in.content, current_user.id)
     reply_content = ""
     citations_data = None
     agent_action_data = None
@@ -66,7 +147,6 @@ async def chat_turn(
             "priority": esc.priority,
             "reason": esc.reason
         }
-
     elif decision.category == "task_action":
         action_result = await task_service.execute_agent_action(
             db=db,
@@ -76,14 +156,12 @@ async def chat_turn(
         )
         reply_content = action_result["message"]
         agent_action_data = action_result
-
     else:  # knowledge_query
         user_org = getattr(current_user, "organization_id", "launchmate") or "launchmate"
         chunks = await rag_service.retrieve_relevant_chunks(db, chat_in.content, organization_id=user_org)
         reply_content, citations = await rag_service.generate_grounded_answer(chat_in.content, chunks)
         citations_data = [c.model_dump() for c in citations]
 
-    # Save Assistant Response
     bot_msg = ChatMessage(
         user_id=current_user.id,
         conversation_id=chat_in.conversation_id,
@@ -98,7 +176,6 @@ async def chat_turn(
     await db.commit()
     await db.refresh(bot_msg)
 
-    # Convert citations to Pydantic objects if present
     parsed_citations = [Citation(**c) for c in citations_data] if citations_data else None
 
     return ChatResponse(
@@ -110,6 +187,7 @@ async def chat_turn(
         confidence=bot_msg.confidence,
         citations=parsed_citations,
         agent_action=bot_msg.agent_action,
+        engine="router",
         created_at=bot_msg.created_at
     )
 
@@ -152,6 +230,18 @@ async def chat_stream(
         # Step 1: Route message
         decision = await agent_router_service.route(message, user.id)
         yield f"data: {json.dumps({'type': 'router', 'decision': decision.model_dump()})}\n\n"
+
+        # Emit LangGraph trace steps
+        steps = ["guardrail", "router"]
+        if decision.category == "escalate":
+            steps.append("escalation")
+        elif decision.category == "task_action":
+            steps.append("action_executor")
+        elif decision.category == "conversation":
+            steps.append("conversation")
+        else:
+            steps.extend(["rag_retrieval", "rag_generation"])
+        yield f"data: {json.dumps({'type': 'langgraph_trace', 'steps': steps, 'active_node': steps[-1], 'engine': 'langgraph'})}\n\n"
 
         full_response = ""
         citations_data = None

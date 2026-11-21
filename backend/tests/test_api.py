@@ -109,6 +109,27 @@ async def test_chat_turn_rag_and_escalation():
         assert esc_data["category"] == "escalate"
         assert "ESC-" in esc_data["content"]
 
+        # 3. LangGraph Mermaid Schema API
+        mermaid_resp = await client.get("/api/v1/chat/graph/mermaid")
+        assert mermaid_resp.status_code == 200
+        m_data = mermaid_resp.json()
+        assert "mermaid" in m_data
+        assert "guardrail" in m_data["mermaid"]
+        assert len(m_data["nodes"]) == 7
+
+        # 4. Explicit LangGraph Turn Execution
+        lg_resp = await client.post(
+            "/api/v1/chat/graph",
+            json={"content": "Good morning! Can you help me?", "conversation_id": "test-lg-api"},
+            headers=headers
+        )
+        assert lg_resp.status_code == 200
+        lg_data = lg_resp.json()
+        assert lg_data["engine"] == "langgraph"
+        assert lg_data["category"] == "conversation"
+        assert "execution_steps" in lg_data
+        assert "guardrail" in lg_data["execution_steps"]
+
 @pytest.mark.asyncio
 async def test_teams_bot_webhook():
     transport = ASGITransport(app=app)

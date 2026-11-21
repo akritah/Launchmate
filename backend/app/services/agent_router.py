@@ -97,15 +97,15 @@ class AgentRouterService:
             "cool", "okay", "ok", "sure", "wow", "lol", "haha", "hehe",
             "yep", "yup", "nope", "no worries", "np", "hmm", "alright",
         }
-        # Short message (≤ 6 words) that matches any conversational token
+        # Short message (≤ 6 words) that matches any conversational token with word boundaries
         all_convo = GREETING_WORDS | THANKS_WORDS | FAREWELL_WORDS | CHITCHAT_WORDS
-        if len(words) <= 6 and any(lower.startswith(p) or p in lower for p in all_convo):
+        if len(words) <= 6 and any(re.search(rf"\b{re.escape(p)}\b", lower) for p in all_convo):
             # Determine sub-type for response generation
-            if any(p in lower for p in GREETING_WORDS):
+            if any(re.search(rf"\b{re.escape(p)}\b", lower) for p in GREETING_WORDS):
                 sub_type = "greeting"
-            elif any(p in lower for p in THANKS_WORDS):
+            elif any(re.search(rf"\b{re.escape(p)}\b", lower) for p in THANKS_WORDS):
                 sub_type = "thanks"
-            elif any(p in lower for p in FAREWELL_WORDS):
+            elif any(re.search(rf"\b{re.escape(p)}\b", lower) for p in FAREWELL_WORDS):
                 sub_type = "farewell"
             else:
                 sub_type = "chitchat"

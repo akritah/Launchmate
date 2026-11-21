@@ -189,6 +189,24 @@ DEMO_USERS = [
         "password": "Password123!"
     },
     {
+        "email": "sarah.chen@microsoft.com",
+        "full_name": "Sarah Chen",
+        "role": "Software Engineer",
+        "department": "Engineering",
+        "location": "Redmond, WA",
+        "is_admin": False,
+        "password": "Password123!"
+    },
+    {
+        "email": "alex.rivera@microsoft.com",
+        "full_name": "Alex Rivera",
+        "role": "Product Manager",
+        "department": "Product",
+        "location": "London, UK",
+        "is_admin": False,
+        "password": "Password123!"
+    },
+    {
         "email": "346789@gmail.com",
         "full_name": "Parth parashar",
         "role": "Software Engineer",

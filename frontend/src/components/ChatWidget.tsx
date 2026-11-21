@@ -384,6 +384,10 @@ export default function ChatWidget({
                   <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 rounded">
                     GPT-4o RAG
                   </span>
+                  <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold tracking-wider bg-purple-500/20 text-purple-200 border border-purple-400/30 rounded flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></span>
+                    LangGraph
+                  </span>
                 </div>
                 <p className="text-[11px] text-blue-100/90 mt-1">
                   Grounding docs • Agent workflows • Human handoff
@@ -477,6 +481,12 @@ export default function ChatWidget({
                     {msg.confidence !== undefined && (
                       <span className="text-[10px] text-slate-400">
                         ({Math.round(msg.confidence * 100)}% conf)
+                      </span>
+                    )}
+                    {msg.execution_steps && msg.execution_steps.length > 0 && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-purple-100 text-purple-800 border border-purple-200" title="LangGraph Multi-Agent Execution Path">
+                        <Layers className="w-2.5 h-2.5 text-purple-600" />
+                        {msg.execution_steps.join(" ➔ ")}
                       </span>
                     )}
                   </div>

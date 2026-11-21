@@ -2,13 +2,14 @@
 # AI-Powered New Joiner Onboarding Assistant
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-8A2BE2.svg)](https://langchain-ai.github.io/langgraph/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
 [![Next.js 14+](https://img.shields.io/badge/Next.js-14+-black.svg)](https://nextjs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg)](https://github.com/pgvector/pgvector)
 [![Azure OpenAI](https://img.shields.io/badge/Azure%20OpenAI-GPT--4o-0078D4.svg)](https://azure.microsoft.com/en-us/products/ai-services/openai-service)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An enterprise-grade, production-ready AI onboarding system designed for global Microsoft/enterprise teams. This system moves beyond basic FAQ chatbots by combining **Generative AI, Retrieval-Augmented Generation (RAG), autonomous agent function-calling, asynchronous background reminder workers, and safe human escalation triage**.
+An enterprise-grade, production-ready AI onboarding system designed for global Microsoft/enterprise teams. This system moves beyond basic FAQ chatbots by combining **LangGraph StateGraph multi-actor orchestration, Retrieval-Augmented Generation (RAG), autonomous agent function-calling, deterministic safety guardrails, asynchronous background reminder workers, and safe human escalation triage**.
 
 ---
 
@@ -62,6 +63,38 @@ flowchart TD
     Worker --> Email
     NudgeSvc -->|Scheduled Scan| Worker
 ```
+
+### 🧠 LangGraph State Machine Architecture
+
+The conversational engine is orchestrated via **LangGraph** (`StateGraph`) combining multi-actor conditional routing, deterministic safety guardrails, autonomous tool execution, and session checkpointing with `MemorySaver`.
+
+```mermaid
+graph TD;
+	__start__([START]):::first --> guardrail;
+	guardrail -.->|is_sensitive| escalation;
+	guardrail -.->|safe| router;
+	router -.->|knowledge_query| rag_retrieval;
+	router -.->|task_action| action_executor;
+	router -.->|conversation| conversation;
+	router -.->|escalate / low_conf| escalation;
+	rag_retrieval --> rag_generation;
+	rag_generation --> __end__([END]):::last;
+	action_executor --> __end__;
+	escalation --> __end__;
+	conversation --> __end__;
+	classDef default fill:#f2f0ff,stroke:#7c3aed,stroke-width:1.5px,color:#0f172a;
+	classDef first fill:#7c3aed,color:#ffffff,stroke-width:0;
+	classDef last fill:#1e1b4b,color:#ffffff,stroke-width:0;
+```
+
+#### Graph Nodes & Responsibilities:
+1. **`guardrail`**: Scans 6 deterministic regex pattern families (harassment, immigration/visa, compensation disputes, legal/compliance, severance, crisis/wellbeing). If detected, bypasses the LLM directly to `escalation`.
+2. **`router`**: Intent classifier scoring query into `knowledge_query`, `task_action`, `conversation`, or `escalate` (queries $<0.70$ confidence).
+3. **`rag_retrieval`**: Performs hybrid vector search using PostgreSQL `pgvector` (or fallback local vectorizer) across company handbooks and policies.
+4. **`rag_generation`**: Generates grounded answer strictly constrained to retrieved chunks with verified markdown citations.
+5. **`action_executor`**: Autonomous function calling engine executing mutations (`complete_task`, `raise_it_ticket`, `book_orientation`, `check_progress`, `list_tasks`).
+6. **`escalation`**: Snapshots recent 8-turn conversation context, creates `#ESC-XXXX` ticket in HR queue, and delivers empathetic handoff.
+7. **`conversation`**: Personalized onboarding small-talk, greetings, gratitude, and navigation guidance.
 
 ### 1. Synchronous Path (Per Chat Interaction)
 1. **User Message & JWT Verification**: Chat message submitted via web widget or Microsoft Teams bot webhook.
@@ -169,10 +202,11 @@ cd backend
 ```
 
 **Test Coverage Highlights:**
+- `test_langgraph_agent.py`: Multi-actor StateGraph compilation, deterministic guardrail routing, grounded RAG branches, autonomous tool execution, and session MemorySaver checkpointing.
 - `test_agent_router.py`: Sensitivity regex guardrails, tool action classification, ambiguity fallback.
 - `test_rag_service.py`: Document chunking, hybrid vector search, source citation extraction, out-of-domain fallback.
 - `test_task_service.py`: Role/location checklist population, idempotent status updates, agent actions execution.
-- `test_api.py`: JWT login, task status changes, chat streaming turns, Microsoft Teams bot webhook, HR escalation resolution.
+- `test_api.py`: JWT login, task status changes, chat streaming turns, Microsoft Teams bot webhook, HR escalation resolution, and LangGraph API endpoints.
 
 ---
 

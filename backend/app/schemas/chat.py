@@ -21,6 +21,7 @@ class AgentRouterDecision(BaseModel):
 class ChatMessageCreate(BaseModel):
     content: str
     conversation_id: str = "default"
+    engine: Optional[str] = "langgraph"  # "langgraph" or "router"
 
 class ChatResponse(BaseModel):
     id: str
@@ -31,9 +32,16 @@ class ChatResponse(BaseModel):
     confidence: Optional[float] = None
     citations: Optional[List[Citation]] = None
     agent_action: Optional[Dict[str, Any]] = None
+    execution_steps: Optional[List[str]] = None
+    engine: Optional[str] = "langgraph"
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class LangGraphMermaidResponse(BaseModel):
+    mermaid: str
+    nodes: List[str]
+    description: str
 
 # Microsoft Teams / Bot Framework Activity Schema
 class TeamsChannelAccount(BaseModel):

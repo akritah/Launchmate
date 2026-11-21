@@ -49,7 +49,7 @@ interface AdminPortalProps {
 
 export default function AdminPortal({ token, onRefreshStats, onSwitchTab }: AdminPortalProps) {
   const [activeTab, setActiveTab] = useState<
-    "joiners" | "escalations" | "templates" | "nudges" | "documents" | "questions" | "calls"
+    "joiners" | "escalations" | "templates" | "nudges" | "documents" | "questions" | "calls" | "langgraph"
   >("joiners");
   
   // State
@@ -60,6 +60,12 @@ export default function AdminPortal({ token, onRefreshStats, onSwitchTab }: Admi
   const [systemStats, setSystemStats] = useState<any>(null);
   const [commonQuestions, setCommonQuestions] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+
+  // LangGraph Diagnostics State
+  const [langgraphMermaid, setLanggraphMermaid] = useState<string>("");
+  const [graphTestQuery, setGraphTestQuery] = useState("What is the 401(k) matching policy and vesting schedule?");
+  const [graphTestResult, setGraphTestResult] = useState<any>(null);
+  const [runningGraphTest, setRunningGraphTest] = useState(false);
 
   // Calls and Live Agent Support Lines State
   const [callRequests, setCallRequests] = useState<any[]>([]);
@@ -224,6 +230,13 @@ export default function AdminPortal({ token, onRefreshStats, onSwitchTab }: Admi
         ]);
         setCallRequests(calls);
         setAgentLines(linesData.all_lines);
+      } else if (activeTab === "langgraph") {
+        try {
+          const res = await api.getGraphMermaid();
+          setLanggraphMermaid(res.mermaid);
+        } catch (e) {
+          console.error("Failed to load LangGraph mermaid diagram", e);
+        }
       }
 
       const stats = await api.getSystemStats(token);
@@ -232,6 +245,21 @@ export default function AdminPortal({ token, onRefreshStats, onSwitchTab }: Admi
       console.error("Failed to load admin data", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExecuteGraphTest = async (overridePrompt?: string) => {
+    const prompt = overridePrompt || graphTestQuery;
+    if (!prompt.trim()) return;
+    setRunningGraphTest(true);
+    setGraphTestResult(null);
+    try {
+      const res = await api.chatGraph(token, prompt, "admin-langgraph-debugger");
+      setGraphTestResult(res);
+    } catch (err: any) {
+      setGraphTestResult({ error: err.message || "Failed to execute LangGraph turn" });
+    } finally {
+      setRunningGraphTest(false);
     }
   };
 
@@ -732,6 +760,17 @@ export default function AdminPortal({ token, onRefreshStats, onSwitchTab }: Admi
           }`}
         >
           <PhoneCall className="w-4 h-4 text-emerald-600" /> Live Agent Lines
+        </button>
+
+        <button
+          onClick={() => setActiveTab("langgraph")}
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
+            activeTab === "langgraph"
+              ? "border-purple-600 text-purple-600"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <Cpu className="w-4 h-4 text-purple-600" /> LangGraph Architecture
         </button>
       </div>
 
@@ -1279,6 +1318,207 @@ export default function AdminPortal({ token, onRefreshStats, onSwitchTab }: Admi
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Tab 8: LangGraph Architecture & Diagnostics */}
+      {activeTab === "langgraph" && (
+        <div className="bg-white rounded-b-2xl border border-t-0 border-slate-200 p-6 shadow-2xs space-y-6">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-slate-900 text-base">LangGraph Multi-Agent Orchestrator</h3>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                  StateGraph • MemorySaver Checkpoint
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Cyclic &amp; conditional multi-actor state graph with deterministic safety guardrails, intent routing, hybrid RAG, autonomous tools, and HR escalation.
+              </p>
+            </div>
+            <button
+              onClick={() => handleExecuteGraphTest()}
+              disabled={runningGraphTest}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors shrink-0 disabled:opacity-50"
+            >
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>{runningGraphTest ? "Executing Graph..." : "Run Test Turn"}</span>
+            </button>
+          </div>
+
+          {/* Graph Nodes Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50">
+              <div className="flex items-center justify-between font-bold text-rose-950">
+                <span className="font-mono">1. guardrail</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-rose-100 text-rose-800 rounded font-bold">Safety</span>
+              </div>
+              <p className="text-rose-900/80 text-[11px] mt-1.5 leading-relaxed">
+                Scans 6 deterministic regex patterns (harassment, visa, compensation, legal, severance, crisis). Bypasses LLM directly to escalation.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/50">
+              <div className="flex items-center justify-between font-bold text-blue-950">
+                <span className="font-mono">2. router</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-bold">Classifier</span>
+              </div>
+              <p className="text-blue-900/80 text-[11px] mt-1.5 leading-relaxed">
+                Fast classifier scoring intent into knowledge, task action, conversation, or escalate (ambiguous queries &lt;0.70 confidence).
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-indigo-200 bg-indigo-50/50">
+              <div className="flex items-center justify-between font-bold text-indigo-950">
+                <span className="font-mono">3. rag_retrieval &amp; gen</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold">RAG</span>
+              </div>
+              <p className="text-indigo-900/80 text-[11px] mt-1.5 leading-relaxed">
+                Retrieves semantic chunks from pgvector/database and generates grounded answers citing specific handbook policies.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50">
+              <div className="flex items-center justify-between font-bold text-emerald-950">
+                <span className="font-mono">4. action_executor</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">Tools</span>
+              </div>
+              <p className="text-emerald-900/80 text-[11px] mt-1.5 leading-relaxed">
+                Autonomous tool engine executing function-calls: complete_task, raise_it_ticket, book_orientation, check_progress.
+              </p>
+            </div>
+          </div>
+
+          {/* Interactive Graph Test Console */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+            <h4 className="font-bold text-slate-900 text-xs flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-purple-600" /> Live Graph Trace &amp; Debugger Console
+            </h4>
+            
+            {/* Quick Sample Presets */}
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="text-slate-500 self-center font-medium">Quick Prompts:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setGraphTestQuery("What is the 401(k) matching policy and vesting schedule?");
+                  handleExecuteGraphTest("What is the 401(k) matching policy and vesting schedule?");
+                }}
+                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition-colors font-medium"
+              >
+                📘 RAG: 401(k) Match
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setGraphTestQuery("Please mark my Multi-Factor Authentication task as completed");
+                  handleExecuteGraphTest("Please mark my Multi-Factor Authentication task as completed");
+                }}
+                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition-colors font-medium"
+              >
+                ⚙️ Tool: Complete MFA Task
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setGraphTestQuery("I have a serious concern regarding harassment from my manager");
+                  handleExecuteGraphTest("I have a serious concern regarding harassment from my manager");
+                }}
+                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-rose-700 border border-rose-200 rounded-lg transition-colors font-medium"
+              >
+                🚨 Safety: Harassment Triage
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setGraphTestQuery("Good morning! Glad to be here.");
+                  handleExecuteGraphTest("Good morning! Glad to be here.");
+                }}
+                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition-colors font-medium"
+              >
+                👋 Convo: Greeting
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={graphTestQuery}
+                onChange={(e) => setGraphTestQuery(e.target.value)}
+                placeholder="Enter query to trace through LangGraph state machine..."
+                className="flex-1 bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-purple-600 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => handleExecuteGraphTest()}
+                disabled={runningGraphTest}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50"
+              >
+                {runningGraphTest ? "Tracing..." : "Execute"}
+              </button>
+            </div>
+
+            {/* Test Result Inspector */}
+            {graphTestResult && (
+              <div className="mt-3 p-4 bg-white border border-purple-200 rounded-xl space-y-2 text-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-900">Execution Trace:</span>
+                    {graphTestResult.execution_steps ? (
+                      <span className="font-mono text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 text-[11px] font-bold">
+                        {graphTestResult.execution_steps.join(" ➔ ")}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 font-mono text-[11px]">Direct Route</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {graphTestResult.category && (
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] uppercase font-bold">
+                        Category: {graphTestResult.category}
+                      </span>
+                    )}
+                    {graphTestResult.confidence !== undefined && (
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-bold">
+                        {Math.round(graphTestResult.confidence * 100)}% Confidence
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-slate-800 whitespace-pre-wrap leading-relaxed">
+                  {graphTestResult.content}
+                </div>
+
+                {graphTestResult.citations && graphTestResult.citations.length > 0 && (
+                  <div className="pt-2 border-t border-slate-100 space-y-1">
+                    <span className="text-[11px] font-semibold text-slate-700">Verified Citations:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {graphTestResult.citations.map((c: any, i: number) => (
+                        <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px]">
+                          📄 {c.title} {c.section ? `• ${c.section}` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Mermaid Graph Flowchart Definition */}
+          {langgraphMermaid && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-slate-900 text-xs">Live Compiled Mermaid Topology</h4>
+                <span className="text-[10px] text-slate-400 font-mono">langgraph.graph.StateGraph.draw_mermaid()</span>
+              </div>
+              <pre className="p-4 bg-slate-900 text-purple-300 rounded-xl font-mono text-[11px] overflow-x-auto border border-slate-800 leading-relaxed">
+                {langgraphMermaid}
+              </pre>
+            </div>
+          )}
         </div>
       )}
 
